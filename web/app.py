@@ -3,10 +3,18 @@ SafeLease AI - 종합 웹 포털 (Streamlit)
 소상공인 사장님을 위한 따뜻하고 세련된 안심 라운지 & 전문가 관리자 대시보드
 """
 
-import streamlit as st
-from datetime import datetime
+import os
+import sys
 from pathlib import Path
+from datetime import datetime
 import json
+
+# Streamlit Cloud 및 서브디렉터리 실행 지원을 위한 프로젝트 루트 등록
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+import streamlit as st
 
 from core.parser import parse_contract
 from core.analyzer.rules_engine import RulesEngine
