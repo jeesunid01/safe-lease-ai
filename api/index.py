@@ -39,33 +39,31 @@ class handler(BaseHTTPRequestHandler):
         """CORS Preflight 대응"""
         self._set_headers(200)
 
+    def _get_path_and_query(self):
+        """Vercel 리라이트 헤더(x-matched-path) 및 원본 요청 경로 분석"""
+        raw_uri = (
+            self.headers.get("x-matched-path")
+            or self.headers.get("x-forwarded-url")
+            or self.headers.get("x-real-url")
+            or self.path
+        )
+        parsed = urllib.parse.urlparse(raw_uri)
+        path = parsed.path.rstrip("/")
+        query_str = parsed.query or urllib.parse.urlparse(self.path).query
+        query_params = urllib.parse.parse_qs(query_str)
+        return path, query_params
+
     def do_GET(self):
         """GET 요청 처리: 헬스체크, 판례 조회, 룰셋 정보, 웹 랜딩 페이지"""
         try:
-            parsed_url = urllib.parse.urlparse(self.path)
-            path = parsed_url.path.rstrip("/")
-            query_params = urllib.parse.parse_qs(parsed_url.query)
+            path, query_params = self._get_path_and_query()
+            accept_header = self.headers.get("Accept", "")
 
-            # 1. 헬스체크 및 서비스 상태
-            if path in ["/api/health", "/api/status", "/api", "/api/index", "/health"]:
-                response_data = {
-                    "status": "healthy",
-                    "service": "SafeLease AI - Serverless API",
-                    "version": "1.2.0",
-                    "app_url": get_app_url(),
-                    "endpoints": {
-                        "health": "GET /api/health",
-                        "rules": "GET /api/rules",
-                        "precedents": "GET /api/precedents?q={keyword}",
-                        "analyze": "POST /api/analyze"
-                    },
-                    "security": {
-                        "zero_retention": True,
-                        "pii_masking": True
-                    }
-                }
-                self._set_headers(200, "application/json")
-                self.wfile.write(json.dumps(response_data, ensure_ascii=False, indent=2).encode("utf-8"))
+            # 1. 루트 웹 랜딩 페이지 (브라우저 접속 시 또는 루트 경로)
+            if path in ["", "/"] or (path in ["/api/index", "/index"] and "text/html" in accept_header):
+                landing_html = self._render_landing_page()
+                self._set_headers(200, "text/html")
+                self.wfile.write(landing_html.encode("utf-8"))
                 return
 
             # 2. 판례 검색
@@ -112,12 +110,26 @@ class handler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"count": len(rules_summary), "rules": rules_summary}, ensure_ascii=False, indent=2).encode("utf-8"))
                 return
 
-            # 4. 루트 웹 랜딩 페이지 (브라우저 접속 시 모던 랜딩 페이지 렌더링)
-            accept_header = self.headers.get("Accept", "")
-            if "text/html" in accept_header or path in ["", "/", "/index"]:
-                landing_html = self._render_landing_page()
-                self._set_headers(200, "text/html")
-                self.wfile.write(landing_html.encode("utf-8"))
+            # 4. 헬스체크 및 서비스 상태
+            if path in ["/api/health", "/api/status", "/api", "/api/index", "/health"]:
+                response_data = {
+                    "status": "healthy",
+                    "service": "SafeLease AI - Serverless API",
+                    "version": "1.2.0",
+                    "app_url": get_app_url(),
+                    "endpoints": {
+                        "health": "GET /api/health",
+                        "rules": "GET /api/rules",
+                        "precedents": "GET /api/precedents?q={keyword}",
+                        "analyze": "POST /api/analyze"
+                    },
+                    "security": {
+                        "zero_retention": True,
+                        "pii_masking": True
+                    }
+                }
+                self._set_headers(200, "application/json")
+                self.wfile.write(json.dumps(response_data, ensure_ascii=False, indent=2).encode("utf-8"))
                 return
 
             # 404 처리
@@ -142,10 +154,9 @@ class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         """POST 요청 처리: 계약서 본문 비동기 검사 (/api/analyze)"""
         try:
-            parsed_url = urllib.parse.urlparse(self.path)
-            path = parsed_url.path.rstrip("/")
+            path, _ = self._get_path_and_query()
 
-            if path == "/api/analyze" or path.endswith("/analyze"):
+            if path == "/api/analyze" or path.endswith("/analyze") or path in ["/api/index", "/api", "/"]:
                 content_length = int(self.headers.get("Content-Length", 0))
                 if content_length == 0:
                     self._set_headers(400, "application/json")
