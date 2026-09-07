@@ -41,95 +41,111 @@ class handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         """GET 요청 처리: 헬스체크, 판례 조회, 룰셋 정보, 웹 랜딩 페이지"""
-        parsed_url = urllib.parse.urlparse(self.path)
-        path = parsed_url.path.rstrip("/")
-        query_params = urllib.parse.parse_qs(parsed_url.query)
+        try:
+            parsed_url = urllib.parse.urlparse(self.path)
+            path = parsed_url.path.rstrip("/")
+            query_params = urllib.parse.parse_qs(parsed_url.query)
 
-        # 1. 헬스체크 및 서비스 상태 (/api/health 또는 /api)
-        if path in ["/api/health", "/api/status", "/api"]:
-            response_data = {
-                "status": "healthy",
-                "service": "SafeLease AI - Serverless API",
-                "version": "1.2.0",
-                "app_url": get_app_url(),
-                "endpoints": {
-                    "health": "GET /api/health",
-                    "rules": "GET /api/rules",
-                    "precedents": "GET /api/precedents?q={keyword}",
-                    "analyze": "POST /api/analyze"
-                },
-                "security": {
-                    "zero_retention": True,
-                    "pii_masking": True
+            # 1. 헬스체크 및 서비스 상태
+            if path in ["/api/health", "/api/status", "/api", "/api/index", "/health"]:
+                response_data = {
+                    "status": "healthy",
+                    "service": "SafeLease AI - Serverless API",
+                    "version": "1.2.0",
+                    "app_url": get_app_url(),
+                    "endpoints": {
+                        "health": "GET /api/health",
+                        "rules": "GET /api/rules",
+                        "precedents": "GET /api/precedents?q={keyword}",
+                        "analyze": "POST /api/analyze"
+                    },
+                    "security": {
+                        "zero_retention": True,
+                        "pii_masking": True
+                    }
                 }
-            }
-            self._set_headers(200, "application/json")
-            self.wfile.write(json.dumps(response_data, ensure_ascii=False, indent=2).encode("utf-8"))
-            return
+                self._set_headers(200, "application/json")
+                self.wfile.write(json.dumps(response_data, ensure_ascii=False, indent=2).encode("utf-8"))
+                return
 
-        # 2. 판례 검색 (/api/precedents)
-        if path == "/api/precedents":
-            db = PrecedentDB()
-            query = query_params.get("q", [""])[0].strip()
-            if query:
-                results = db.search(query)
-            else:
-                results = db.get_all()
+            # 2. 판례 검색
+            if path.endswith("/precedents"):
+                db = PrecedentDB()
+                query = query_params.get("q", [""])[0].strip()
+                if query:
+                    results = db.search(query)
+                else:
+                    results = db.get_all()
 
-            data = [
-                {
-                    "precedent_id": p.precedent_id,
-                    "case_no": p.case_no,
-                    "case_date": p.case_date,
-                    "title": p.title,
-                    "category": p.category,
-                    "summary": p.summary,
-                    "key_quote": p.key_quote,
-                    "action_guide": p.action_guide
-                }
-                for p in results
-            ]
-            self._set_headers(200, "application/json")
-            self.wfile.write(json.dumps({"total": len(data), "items": data}, ensure_ascii=False, indent=2).encode("utf-8"))
-            return
+                data = [
+                    {
+                        "precedent_id": p.precedent_id,
+                        "case_no": p.case_no,
+                        "case_date": p.case_date,
+                        "title": p.title,
+                        "category": p.category,
+                        "summary": p.summary,
+                        "key_quote": p.key_quote,
+                        "action_guide": p.action_guide
+                    }
+                    for p in results
+                ]
+                self._set_headers(200, "application/json")
+                self.wfile.write(json.dumps({"total": len(data), "items": data}, ensure_ascii=False, indent=2).encode("utf-8"))
+                return
 
-        # 3. 룰셋 목록 (/api/rules)
-        if path == "/api/rules":
-            contract_type = query_params.get("type", ["all"])[0]
-            engine = RulesEngine(contract_type=contract_type)
-            rules_summary = [
-                {
-                    "rule_id": r.get("rule_id"),
-                    "title": r.get("title"),
-                    "category": r.get("category"),
-                    "risk_level": r.get("risk_level"),
-                    "legal_basis": r.get("legal_basis")
-                }
-                for r in engine.rules
-            ]
-            self._set_headers(200, "application/json")
-            self.wfile.write(json.dumps({"count": len(rules_summary), "rules": rules_summary}, ensure_ascii=False, indent=2).encode("utf-8"))
-            return
+            # 3. 룰셋 목록
+            if path.endswith("/rules"):
+                contract_type = query_params.get("type", ["all"])[0]
+                engine = RulesEngine(contract_type=contract_type)
+                rules_summary = [
+                    {
+                        "rule_id": r.get("rule_id"),
+                        "title": r.get("title"),
+                        "category": r.get("category"),
+                        "risk_level": r.get("risk_level"),
+                        "legal_basis": r.get("legal_basis")
+                    }
+                    for r in engine.rules
+                ]
+                self._set_headers(200, "application/json")
+                self.wfile.write(json.dumps({"count": len(rules_summary), "rules": rules_summary}, ensure_ascii=False, indent=2).encode("utf-8"))
+                return
 
-        # 4. 루트 웹 랜딩 페이지 (브라우저 접속 시 모던 랜딩 페이지 렌더링)
-        accept_header = self.headers.get("Accept", "")
-        if "text/html" in accept_header or path in ["", "/"]:
-            landing_html = self._render_landing_page()
-            self._set_headers(200, "text/html")
-            self.wfile.write(landing_html.encode("utf-8"))
-            return
+            # 4. 루트 웹 랜딩 페이지 (브라우저 접속 시 모던 랜딩 페이지 렌더링)
+            accept_header = self.headers.get("Accept", "")
+            if "text/html" in accept_header or path in ["", "/", "/index"]:
+                landing_html = self._render_landing_page()
+                self._set_headers(200, "text/html")
+                self.wfile.write(landing_html.encode("utf-8"))
+                return
 
-        # 404 처리
-        self._set_headers(404, "application/json")
-        self.wfile.write(json.dumps({"error": "Not Found", "path": path}, ensure_ascii=False).encode("utf-8"))
+            # 404 처리
+            self._set_headers(404, "application/json")
+            self.wfile.write(json.dumps({"error": "Not Found", "path": path}, ensure_ascii=False).encode("utf-8"))
+
+        except Exception as e:
+            import traceback
+            err_trace = traceback.format_exc()
+            print(f"[Vercel Handler Error]: {err_trace}", file=sys.stderr)
+            try:
+                self._set_headers(500, "application/json")
+                self.wfile.write(json.dumps({
+                    "status": "error",
+                    "message": "서버 내부 처리 중 오류가 발생했습니다.",
+                    "error": str(e),
+                    "traceback": err_trace
+                }, ensure_ascii=False).encode("utf-8"))
+            except Exception:
+                pass
 
     def do_POST(self):
         """POST 요청 처리: 계약서 본문 비동기 검사 (/api/analyze)"""
-        parsed_url = urllib.parse.urlparse(self.path)
-        path = parsed_url.path.rstrip("/")
+        try:
+            parsed_url = urllib.parse.urlparse(self.path)
+            path = parsed_url.path.rstrip("/")
 
-        if path == "/api/analyze":
-            try:
+            if path == "/api/analyze" or path.endswith("/analyze"):
                 content_length = int(self.headers.get("Content-Length", 0))
                 if content_length == 0:
                     self._set_headers(400, "application/json")
@@ -209,14 +225,24 @@ class handler(BaseHTTPRequestHandler):
 
                 self._set_headers(200, "application/json")
                 self.wfile.write(json.dumps(response_payload, ensure_ascii=False, indent=2).encode("utf-8"))
+                return
 
-            except Exception as e:
+            self._set_headers(404, "application/json")
+            self.wfile.write(json.dumps({"error": "Endpoint Not Found", "path": path}, ensure_ascii=False).encode("utf-8"))
+
+        except Exception as e:
+            import traceback
+            err_trace = traceback.format_exc()
+            print(f"[Vercel Handler POST Error]: {err_trace}", file=sys.stderr)
+            try:
                 self._set_headers(500, "application/json")
-                self.wfile.write(json.dumps({"error": f"분석 중 오류가 발생했습니다: {str(e)}"}, ensure_ascii=False).encode("utf-8"))
-            return
-
-        self._set_headers(404, "application/json")
-        self.wfile.write(json.dumps({"error": "Endpoint Not Found"}, ensure_ascii=False).encode("utf-8"))
+                self.wfile.write(json.dumps({
+                    "status": "error",
+                    "message": f"분석 중 오류가 발생했습니다: {str(e)}",
+                    "traceback": err_trace
+                }, ensure_ascii=False).encode("utf-8"))
+            except Exception:
+                pass
 
     def _render_landing_page(self) -> str:
         """Vercel 웹 브라우저 방문자용 세련된 안심 라운지 소개 및 API 게이트웨이 페이지"""

@@ -3,11 +3,15 @@ SafeLease AI - 전역 설정 및 경로 관리 모듈
 """
 
 import os
+import tempfile
 from pathlib import Path
 from dotenv import load_dotenv
 
 # .env 로드
 load_dotenv()
+
+# Vercel Serverless 환경 감지
+IS_VERCEL = bool(os.getenv("VERCEL"))
 
 # 기본 디렉터리 경로 설정
 BASE_DIR = Path(__file__).resolve().parent
@@ -19,14 +23,14 @@ CLI_DIR = BASE_DIR / "cli"
 WEB_DIR = BASE_DIR / "web"
 TESTS_DIR = BASE_DIR / "tests"
 
-# 데이터 관련 세부 경로
-HISTORY_DIR = DATA_DIR / "history"
+# 데이터 관련 세부 경로 (Vercel에서는 읽기 전용 파일 시스템이므로 /tmp 사용)
+HISTORY_DIR = (Path(tempfile.gettempdir()) / "safe_lease_history") if IS_VERCEL else (DATA_DIR / "history")
 RULESET_DIR = DATA_DIR / "ruleset"
 PRECEDENTS_DIR = DATA_DIR / "precedents"
 STANDARD_CONTRACTS_DIR = DATA_DIR / "standard_contracts"
 
-# 임시 파일 디렉터리 (Zero-Retention: 처리 후 즉시 파기)
-TEMP_DIR = BASE_DIR / "temp"
+# 임시 파일 디렉터리 (Zero-Retention: 처리 후 즉시 파기, Vercel에서는 /tmp 사용)
+TEMP_DIR = (Path(tempfile.gettempdir()) / "safe_lease_temp") if IS_VERCEL else (BASE_DIR / "temp")
 
 # 데이터베이스 설정
 DB_PATH = HISTORY_DIR / os.getenv("DB_NAME", "safe_lease.db")
@@ -36,9 +40,12 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 APP_ENV = os.getenv("APP_ENV", "development")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
-# 필수 디렉터리 자동 생성 보장
+# 필수 디렉터리 자동 생성 보장 (Vercel의 읽기 전용 파일 시스템 에러 방지)
 for directory in [HISTORY_DIR, RULESET_DIR, PRECEDENTS_DIR, STANDARD_CONTRACTS_DIR, TEMP_DIR]:
-    directory.mkdir(parents=True, exist_ok=True)
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except (OSError, PermissionError):
+        pass
 
 
 def get_app_url() -> str:
